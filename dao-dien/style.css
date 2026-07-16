@@ -1,0 +1,18 @@
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+:root { --nen: #121212; --khung: #1e1e1e; --nut: #2563eb; --chu: #e5e7eb; --chu-phu: #9ca3af; --vien: #374151; }
+body { background: var(--nen); color: var(--chu); height: 100vh; display: flex; flex-direction: column; }
+.container { max-width: 768px; width: 100%; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+.header { padding: 16px; text-align: center; border-bottom: 1px solid var(--vien); background: var(--khung); }
+.header h1 { font-size: 1.25rem; font-weight: 600; }
+.khung-chat { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.tin-nhan { max-width: 85%; display: flex; }
+.tin-nhan.nguoi { align-self: flex-end; }
+.tin-nhan.ai { align-self: flex-start; }
+.noi-dung { padding: 12px 16px; border-radius: 18px; line-height: 1.5; font-size: 0.95rem; }
+.tin-nhan.nguoi .noi-dung { background: var(--nut); border-bottom-right-radius: 4px; }
+.tin-nhan.ai .noi-dung { background: var(--khung); border-bottom-left-radius: 4px; border: 1px solid var(--vien); }
+.khu-vuc-nhap { display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--vien); background: var(--khung); }
+#o-nhap { flex: 1; padding: 12px 16px; border: 1px solid var(--vien); border-radius: 24px; background: var(--nen); color: var(--chu); font-size: 0.95rem; outline: none; }
+#o-nhap:focus { border-color: var(--nut); }
+button { padding: 12px 20px; border: none; border-radius: 24px; background: var(--nut); color: white; font-weight: 500; cursor: pointer; transition: background 0.2s; }
+button:hover { background: #1d4ed8; }
