@@ -1,6 +1,12 @@
-def kiem_tra_che_do(so_lan_xoa):
-    # Nếu xóa hơn 5 lần tự chuyển chế độ phòng
-    return "chinh" if so_lan_xoa < 5 else "phong"
-
-def chuyen_che_do_phong():
-    print("⚠️ Hệ thống chuyển sang chế độ phòng ngừa: Giảm độ phức tạp, trả lời ngắn gọn hơn")
+class QuanLyCheDo:
+    def __init__(self, nguong=5):
+        self.nguong=nguong
+        self.so_lan_xoa=0
+    @property
+    def che_do_hien_tai(self):
+        return "phong" if self.so_lan_xoa >= self.nguong else "chinh"
+    def tang_dem(self):
+        self.so_lan_xoa+=1
+        if self.so_lan_xoa==self.nguong:
+            print("\n⚠️ ⚠️ ⚠️ BẠN ĐÃ XÓA NHIỀU LẦN → HỆ THỐNG TỰ ĐỘNG CHUYỂN SANG CHẾ ĐỘ PHÒNG NGỪA ⚠️ ⚠️ ⚠️\n")
+    def dat_lai(self): self.so_lan_xoa=0
