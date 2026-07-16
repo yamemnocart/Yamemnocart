@@ -1,82 +1,90 @@
-from fastapi import FastAPI, HTTPException
+import os, sys, json
+from pathlib import Path
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
 import uvicorn
-import sys
-import os
-sys.path.append(os.path.dirname(__file__))
 
-from buoc1_etl import xu_ly_van_ban
-from buoc2_vector import tao_vector, tim_tuong_thich
-from buoc3_transformer import du_doan_cau_tra_loi
-from phan_chia_du_lieu import chia_nho_van_ban
-from che_do_phong_hoa import kiem_tra_che_do, chuyen_che_do_phong
+# ĐƯỜNG DẪN TUYỆT ĐỐI - CHẠY ĐÚNG MỌI NƠI BAO GỒM TERMUX
+GOC = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(GOC/"xu-ly-ai"))
 
-app = FastAPI()
+from buoc1_etl import lam_sach, tach_tu, luu_van_ban_goc
+from buoc2_vector import Word2VecAI, khoi_tao_vector, tinh_tuong_dong_cosine
+from buoc3_transformer import TransformerNho
+from phan_chia_du_lieu import chia_thanh_doan_thong_minh
+from che_do_phong_hoa import QuanLyCheDo
 
-# Lưu trữ dữ liệu toàn cục
-bo_nho_ai = {"vector": [], "van_ban": [], "lich_su_tra_loi": [], "so_lan_xoa": 0}
+app = FastAPI(title="AI TỰ XÂY DỰNG")
+app.mount("/giao-dien", StaticFiles(directory=str(GOC/"giao-dien")), name="gd")
 
-class CauHoi(BaseModel):
-    cau_hoi: str
+# THƯ MỤC LƯU DỮ LIỆU
+DL_GOC = GOC/"du-lieu"/"van-ban-goc"
+DL_XL  = GOC/"du-lieu"/"du-lieu-da-xu-ly"
+DL_MH  = GOC/"du-lieu"/"mo-hinh"
+for p in [DL_GOC,DL_XL,DL_MH]: p.mkdir(parents=True,exist_ok=True)
 
-class VanBanNap(BaseModel):
-    noi_dung: str
+# KHỞI TẠO MÔ HÌNH MỘT LẦN DUY NHẤ
+w2v = Word2VecAI(DL_MH)
+tf  = TransformerNho()
+qld = QuanLyCheDo(nguong=5)
+BO_NHO = {"lich_su":[]}
 
-# Gắn giao diện web
-app.mount("/static", StaticFiles(directory="../giao-dien"), name="giao_dien")
-
+# === GIAO DIỆN ===
 @app.get("/")
-async def giao_dien_chat():
-    return FileResponse("../giao-dien/index.html")
-
+async def web_chat(): return FileResponse(str(GOC/"giao-dien"/"index.html"))
 @app.get("/nap-du-lieu")
-async def giao_dien_nap():
-    return FileResponse("../giao-dien/nap-du-lieu.html")
+async def web_nap(): return FileResponse(str(GOC/"giao-dien"/"nap-du-lieu.html"))
 
-@app.post("/api/nap-van-ban")
-async def nhan_van_ban(van_ban: VanBanNap):
-    try:
-        # Chia nhỏ văn bản lớn
- doan_van = chia_nho_van_ban(van_ban.noi_dung)
-        for doan in doan_van:
-            # Làm sạch & tách từ
-            du_lieu_sach = xu_ly_van_ban(doan)
-            # Tạo vector nhúng từ
-            vector_moi = tao_vector(du_lieu_sach)
-            bo_nho_ai["vector"].extend(vector_moi)
-            bo_nho_ai["van_ban"].extend(du_lieu_sach)
-        return {"trang_thai": "thanh_cong", "thong_bao": "Đã nạp và xử lý dữ liệu thành công"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {str(e)}")
+# === API NẠP DỮ LIỆU ===
+@app.post("/api/nap")
+async def api_nap(rq:Request):
+    j = await rq.json()
+    nd = j.get("noi_dung","")
+    cac_doan = chia_thanh_doan_thong_minh(nd, 450)
+    luu_van_ban_goc(DL_GOC, nd)
+    da_xu_ly = []
+    for d in cac_doan:
+        sach = lam_sach(d)
+        tu   = tach_tu(sach)
+        if len(tu)>=2: da_xu_ly.append(tu)
+    # Lưu dữ liệu đã xử lý
+    (DL_XL/"tu_da_tach.jsonl").open("a",encoding="utf8").write("\n".join(json.dumps(x,ensure_ascii=False) for x in da_xu_ly)+"\n")
+    # Huấn luyện vector
+    w2v.huan_luyen(da_xu_ly)
+    return JSONResponse({"trang_thai":"ok","thong_bao":f"Đã chia {len(cac_doan)} đoạn → xử lý {len(da_xu_ly)} cụm từ → cập nhật bộ nhớ vector thành công"})
 
-@app.post("/api/tra-loi")
-async def tra_loi_cau_hoi(cau_hoi: CauHoi):
-    try:
-        # Kiểm tra chế độ hoạt động
-        che_do = kiem_tra_che_do(bo_nho_ai["so_lan_xoa"])
-        if che_do == "phong":
-            chuyen_che_do_phong()
+# === API TRẢ LỜI ===
+@app.post("/api/hoi")
+async def api_hoi(rq:Request):
+    j = await rq.json()
+    ch = j.get("cau_hoi","")
+    ch_sach = lam_sach(ch)
+    ch_tu   = tach_tu(ch_sach)
+    if not ch_tu: return JSONResponse({"tra_loi":"⚠️ Câu hỏi quá ngắn hoặc không hợp lệ"})
+    # Lấy chế độ hiện tại
+    chedo = qld.che_do_hien_tai
+    # Tạo vector câu hỏi
+    vch = w2v.vector_cau(ch_tu)
+    if vch is None: return JSONResponse({"tra_loi":"ℹ️ Chưa có dữ liệu nào, vui lòng nạp văn bản trước"})
+    # Tìm ngữ cảnh gần nhất
+    ngu_canh = w2v.tim_ngu_canh_lien_quan(vch, top=4)
+    # Dự đoán qua Transformer
+    tra_loi = tf.sinh_cau_tra_loi(ch_tu, ngu_canh, chedo)
+    BO_NHO["lich_su"].append({"cau_hoi":ch_tu,"tra_loi":tra_loi,"vector":vch.tolist()})
+    # Lưu lịch sử tạm
+    (DL_MH/"lich_su_tra_loi.json").write_text(json.dumps(BO_NHO["lich_su"],ensure_ascii=False),encoding="utf8")
+    return JSONResponse({"tra_loi":tra_loi,"che_do":chedo})
 
-        # Xử lý câu hỏi
-        du_lieu_cau_hoi = xu_ly_van_ban(cau_hoi.cau_hoi)
-        vector_cau_hoi = tao_vector(du_lieu_cau_hoi)
-        van_ban_lien_quan = tim_tuong_thich(vector_cau_hoi, bo_nho_ai["vector"], bo_nho_ai["van_ban"])
-        cau_tra_loi = du_doan_cau_tra_loi(vector_cau_hoi, van_ban_lien_quan, che_do)
+# === API XÓA - GỌI TỪ TERMINAL ===
+@app.post("/api/xoa-cuoi")
+async def xoa_cuoi():
+    if not BO_NHO["lich_su"]: return JSONResponse({"tb":"Không có câu trả lời nào để xóa"})
+    cuoi = BO_NHO["lich_su"].pop()
+    w2v.xoa_vector_lien_quan(cuoi["vector"])
+    qld.tang_dem()
+    (DL_MH/"lich_su_tra_loi.json").write_text(json.dumps(BO_NHO["lich_su"],ensure_ascii=False),encoding="utf8")
+    return JSONResponse({"tb":"✅ ĐÃ XÓA HOÀN TOÀN, AI SẼ KHÔNG BAO GIỜ NÓI LẠI NỘI DUNG NÀY","che_do_moi":qld.che_do_hien_tai})
 
-        bo_nho_ai["lich_su_tra_loi"].append(cau_tra_loi)
-        return {"cau_tra_loi": cau_tra_loi}
-    except Exception as e:
-        return {"cau_tra_loi": "Tôi chưa hiểu câu hỏi này, vui lòng nạp thêm dữ liệu hoặc diễn đạt lại."}
-
-@app.post("/api/xoa-cau-tra-loi")
-async def xoa_cau_tra_loi_cuoi():
-    if bo_nho_ai["lich_su_tra_loi"]:
-        bo_nho_ai["lich_su_tra_loi"].pop()
-        bo_nho_ai["so_lan_xoa"] += 1
-        return {"trang_thai": "da_xoa", "thong_bao": "Đã xóa câu trả lời cuối cùng khỏi bộ nhớ"}
-    return {"thong_bao": "Không có câu trả lời nào để xóa"}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+if __name__=="__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
