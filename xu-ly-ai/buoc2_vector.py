@@ -1,33 +1,57 @@
+import os, json, numpy as np
 from gensim.models import Word2Vec
-import numpy as np
+from collections import defaultdict
 from sklearn.metrics.pairwise import cosine_similarity
 
-mo_hinh = None
-kich_thuoc_vector = 100
-
-def tao_vector(danh_sach_tu):
-    global mo_hinh
-    if len(danh_sach_tu) < 2:
-        return []
-    # Huấn luyện mô hình nếu chưa có
-    if mo_hinh is None:
-        mo_hinh = Word2Vec([danh_sach_tu], vector_size=kich_thuoc_vector, window=5, min_count=1, workers=2)
-    else:
-        mo_hinh.build_vocab([danh_sach_tu], update=True)
-        mo_hinh.train([danh_sach_tu], total_examples=1, epochs=5)
-    # Chuyển thành vector
-    vector_tong = np.zeros(kich_thuoc_vector)
-    so_tu = 0
-    for tu in danh_sach_tu:
-        if tu in mo_hinh.wv:
-            vector_tong += mo_hinh.wv[tu]
-            so_tu += 1
-    return vector_tong / so_tu if so_tu > 0 else []
-
-def tim_tuong_thich(vector_cau_hoi, danh_sach_vector, danh_sach_van_ban, so_luong=5):
-    if not danh_sach_vector or len(vector_cau_hoi) == 0:
-        return []
-    # Tìm độ tương đồng cosine
-    do_tuong_thich = [cosine_similarity([vector_cau_hoi], [vec])[0][0] for vec in danh_sach_vector]
-    chi_so_sap_xep = np.argsort(do_tuong_thich)[-so_luong:][::-1]
-    return [danh_sach_van_ban[i] for i in chi_so_sap_xep if do_tuong_thich[i] > 0.3]
+class Word2VecAI:
+    def __init__(self, thu_muc_luu, kich=128):
+        self.tm=thu_muc_luu; self.k=kich
+        self.dh = thu_muc_luu/"w2v.model"
+        self.dong_xuat = defaultdict(int)
+        self.kho_ngu_canh = []
+        self._tai()
+    def _tai(self):
+        if self.dh.exists():
+            self.m = Word2Vec.load(str(self.dh))
+        else:
+            self.m = None
+        if (self.tm/"ngu_canh.json").exists():
+            self.kho_ngu_canh = json.loads((self.tm/"ngu_canh.json").read_text(encoding="utf8"))
+    def _luu(self):
+        if self.m: self.m.save(str(self.dh))
+        (self.tm/"ngu_canh.json").write_text(json.dumps(self.kho_ngu_canh,ensure_ascii=False),encoding="utf8")
+    def huan_luyen(self, mang_cau):
+        if not mang_cau: return
+        # XÂY DỰNG MA TRẬN ĐỒNG XUẤT HIỆN
+        for cau in mang_cau:
+            for i,t in enumerate(cau):
+                for j in range(max(0,i-3),min(len(cau),i+4)):
+                    if i!=j: self.dong_xuat[(t,cau[j])]+=1
+        if self.m is None:
+            self.m = Word2Vec(mang_cau,vector_size=self.k,window=4,min_count=1,workers=2,sg=1)
+        else:
+            self.m.build_vocab(mang_cau, update=True)
+            self.m.train(mang_cau, total_examples=len(mang_cau), epochs=6)
+        # Lưu vector ngữ cảnh
+        for cau in mang_cau:
+            v = self.vector_cau(cau)
+            if v is not None:
+                self.kho_ngu_canh.append({"tu":cau,"vec":v.tolist()})
+        self._luu()
+    def vector_cau(self, tu_danh_sach):
+        if not self.m: return None
+        ds=[self.m.wv[t] for t in tu_danh_sach if t in self.m.wv]
+        if not ds: return None
+        return np.mean(ds,axis=0)
+    def tim_ngu_canh_lien_quan(self, v, top=5):
+        if not self.kho_ngu_canh: return []
+        arr = np.array([x["vec"] for x in self.kho_ngu_canh])
+        sim = cosine_similarity([v], arr)[0]
+        vi = np.argsort(sim)[::-1][:top]
+        return [self.kho_ngu_canh[i]["tu"] for i in vi if sim[i]>0.22]
+    def xoa_vector_lien_quan(self, v):
+        if not v or not self.kho_ngu_canh: return
+        arr=np.array([x["vec"] for x in self.kho_ngu_canh])
+        sim=cosine_similarity([np.array(v)],arr)[0]
+        self.kho_ngu_canh = [nc for nc,s in zip(self.kho_ngu_canh,sim) if s<0.85]
+        self._luu()
