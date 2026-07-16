@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nạp Dữ Liệu Cho AI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui; }
+        body { background: #121212; color: #e5e7eb; padding: 20px; max-width: 768px; margin: 0 auto; }
+        h1 { margin-bottom: 20px; text-align: center; }
+        textarea { width: 100%; height: 300px; padding: 16px; border: 1px solid #374151; border-radius: 12px; background: #1e1e1e; color: white; font-size: 0.95rem; margin-bottom: 16px; outline: none; }
+        textarea:focus { border-color: #2563eb; }
+        button { width: 100%; padding: 14px; border: none; border-radius: 12px; background: #2563eb; color: white; font-size: 1rem; font-weight: 500; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        #thong_bao { margin-top: 16px; text-align: center; padding: 12px; border-radius: 8px; display: none; }
+        .thanh-cong { background: #1e3a8a; }
+    </style>
+</head>
+<body>
+    <h1>Nạp Văn Bản Dữ Liệu</h1>
+    <textarea id="van-ban" placeholder="Dán toàn bộ văn bản, sách, tài liệu bạn muốn nạp vào AI ở đây..."></textarea>
+    <button onclick="napDuLieu()">Nạp Vào Hệ Thống</button>
+    <div id="thong_bao"></div>
+
+    <script>
+        async function napDuLieu() {
+            const noiDung = document.getElementById('van-ban').value.trim();
+            const thongBao = document.getElementById('thong_bao');
+            if (!noiDung) {
+                thongBao.textContent = "Vui lòng nhập nội dung văn bản!";
+                thongBao.style.display = "block";
+                thongBao.className = "";
+                return;
+            }
+            try {
+                const phanHoi = await fetch('/api/nap-van-ban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ noi_dung: noiDung })
+                });
+                const ketQua = await phanHoi.json();
+                thongBao.textContent = ketQua.thong_bao || "Hoàn tất!";
+                thongBao.className = "thanh-cong";
+                thongBao.style.display = "block";
+                document.getElementById('van-ban').value = "";
+            } catch (loi) {
+                thongBao.textContent = "Lỗi kết nối, vui lòng thử lại!";
+                thongBao.style.display = "block";
+                thongBao.className = "";
+            }
+        }
+    </script>
+</body>
+</html>
